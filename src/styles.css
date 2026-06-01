@@ -7,7 +7,7 @@ body {
 
 .calculator {
   width: min(420px, 100%);
-  margin: 4rem auto;
+  margin: 5rem auto;
   padding: 1rem;
   border-radius: 28px;
   background: radial-gradient(circle at top, #232940 0%, #121521 60%);
