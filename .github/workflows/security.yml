@@ -1,137 +1,114 @@
 name: CodeGuardAI Build & Protect
  
 on:
-push:
-branches: [ "**" ]
-pull_request:
-branches: [ "**" ]
+  push:
+    branches: [ "**" ]
+  pull_request:
+    branches: [ "**" ]
  
 jobs:
-build:
-name: Build, Verify & Security Scan
-runs-on: ubuntu-latest
+  build:
+    name: Build, Verify & Security Scan
+    runs-on: ubuntu-latest
  
-steps:
-- name: Checkout Code
-uses: actions/checkout@v4
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
  
-- name: Setup Node.js
-uses: actions/setup-node@v4
-with:
-node-version: 20
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
  
-- name: Setup .NET SDK
-uses: actions/setup-dotnet@v4
-with:
-dotnet-version: '8.0'
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0'
  
-# ==========================================
-# 1. FRONTEND BUILD & VERIFY
-# ==========================================
-- name: Install and Build Frontend
-id: build_frontend
-run: |
-cd EarnEasyWorkmates.Client/EarnEasyWorkmates
-npm install
-npm run build 2>&1 | tee build_log_frontend.txt
+      # ==========================================
+      # 1. FRONTEND BUILD & VERIFY
+      # ==========================================
+      - name: Install and Build Frontend
+        id: build_frontend
+        run: |
+          cd EarnEasyWorkmates.Client/EarnEasyWorkmates
+          npm install
+          npm run build 2>&1 | tee build_log_frontend.txt
  
-# ==========================================
-# 2. BACKEND BUILD & VERIFY (Corrected Path!)
-# ==========================================
-- name: Build Backend
-id: build_backend
-run: |
-cd EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller
-dotnet restore EarnEasyWorkmates.sln
-dotnet build EarnEasyWorkmates.sln 2>&1 | tee build_log_backend.txt
+      # ==========================================
+      # 2. BACKEND BUILD & VERIFY (Corrected Path!)
+      # ==========================================
+      - name: Build Backend
+        id: build_backend
+        run: |
+          cd EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller
+          dotnet restore EarnEasyWorkmates.sln
+          dotnet build EarnEasyWorkmates.sln 2>&1 | tee build_log_backend.txt
  
-# ==========================================
-# 3. FRONTEND SECURITY AUDIT
-# ==========================================
-- name: Audit Frontend Dependencies (Security Scan)
-id: audit_frontend
-run: |
-cd EarnEasyWorkmates.Client/EarnEasyWorkmates
-# Audit production dependencies for High/Critical risks
-npm audit --only=prod --audit-level=high 2>&1 | tee security_log_frontend.txt
+      # ==========================================
+      # 3. FRONTEND SECURITY AUDIT
+      # ==========================================
+      - name: Audit Frontend Dependencies (Security Scan)
+        id: audit_frontend
+        run: |
+          cd EarnEasyWorkmates.Client/EarnEasyWorkmates
+          # Audit production dependencies for High/Critical risks.
+          # If audit finds High vulnerabilities, it exits with non-zero code to trigger CodeGuardAI.
+          npm audit --only=prod --audit-level=high 2>&1 | tee security_log_frontend.txt
  
-# ==========================================
-# 4. BACKEND SECURITY AUDIT
-# ==========================================
-- name: Audit Backend Dependencies (Security Scan)
-id: audit_backend
-run: |
-cd EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller
-# Scans NuGet packages for known vulnerabilities (CVEs)
-dotnet list EarnEasyWorkmates.sln package --vulnerable 2>&1 | tee security_log_backend.txt
+      # ==========================================
+      # 4. BACKEND SECURITY AUDIT
+      # ==========================================
+      - name: Audit Backend Dependencies (Security Scan)
+        id: audit_backend
+        run: |
+          cd EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller
+          # Scans NuGet packages for known vulnerabilities (CVEs)
+          dotnet list EarnEasyWorkmates.sln package --vulnerable 2>&1 | tee security_log_backend.txt
+          # If vulnerable packages are found, we fail this step to trigger CodeGuardAI remediation
+          if grep -q -E "High|Critical|Moderate" security_log_backend.txt; then
+            echo "WARNING: Vulnerable NuGet packages detected in the backend!"
+            exit 1
+          fi
  
-# If vulnerable packages are found, we fail this step to trigger CodeGuardAI remediation
-if grep -q -E "High|Critical|Moderate" security_log_backend.txt; then
-echo "WARNING: Vulnerable NuGet packages detected in the backend!"
-exit 1
-fi
- 
-# ==========================================
-# 5. COREGUARD AI NOTIFICATION ON FAILURE
-# ==========================================
-- name: Notify CodeGuardAI on Failure
-if: failure()
-run: |
-LOG_CONTENT=""
- 
-# Capture Frontend Build Failure logs
-if [ -f "EarnEasyWorkmates.Client/EarnEasyWorkmates/build_log_frontend.txt" ]; then
-LOG_CONTENT="--- FRONTEND BUILD LOGS ---\n$(tail -n 40 EarnEasyWorkmates.Client/EarnEasyWorkmates/build_log_frontend.txt)\n"
-fi
- 
-# Capture Frontend Security Audit logs
-if [ -f "EarnEasyWorkmates.Client/EarnEasyWorkmates/security_log_frontend.txt" ]; then
-LOG_CONTENT="$LOG_CONTENT\n--- FRONTEND SECURITY VULNERABILITIES ---\n$(cat EarnEasyWorkmates.Client/EarnEasyWorkmates/security_log_frontend.txt | tail -n 40)\n"
-fi
- 
-# Capture Backend Build Failure logs (Corrected Path!)
-if [ -f "EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller/build_log_backend.txt" ]; then
-LOG_CONTENT="$LOG_CONTENT\n--- BACKEND BUILD LOGS ---\n$(tail -n 40 EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller/build_log_backend.txt)\n"
-fi
- 
-# Capture Backend Security Audit logs (Corrected Path!)
-if [ -f "EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller/security_log_backend.txt" ]; then
-LOG_CONTENT="$LOG_CONTENT\n--- BACKEND SECURITY VULNERABILITIES ---\n$(cat EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller/security_log_backend.txt | tail -n 40)\n"
-fi
- 
-if [ -z "$LOG_CONTENT" ]; then
-LOG_CONTENT="No build or security logs captured."
-fi
- 
-# =========================================================================
-# OPTION A: Using GitHub Repository Secrets (Highly Recommended & Secure)
-# =========================================================================
-# PAYLOAD=$(jq -n \
-#   --arg repo "${{ github.repository }}" \
-#   --arg branch "${{ github.ref_name }}" \
-#   --arg sha "${{ github.sha }}" \
-#   --arg runId "${{ github.run_id }}" \
-#   --arg errorMessage "$LOG_CONTENT" \
-#   --arg pusherName "${{ github.actor }}" \
-#   --arg githubPat "${{ secrets.CODEGUARD_GITHUB_PAT }}" \
-#   '{repo: $repo, branch: $branch, commitSha: $sha, runId: $runId, errorMessage: $errorMessage, pusherName: $pusherName, githubPat: $githubPat}')
- 
-# =========================================================================
-# OPTION B: Hardcoded String Token (As requested)
-# =========================================================================
-PAYLOAD=$(jq -n \
---arg repo "${{ github.repository }}" \
---arg branch "${{ github.ref_name }}" \
---arg sha "${{ github.sha }}" \
---arg runId "${{ github.run_id }}" \
---arg errorMessage "$LOG_CONTENT" \
---arg pusherName "${{ github.actor }}" \
---arg githubPat "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" \
-'{repo: $repo, branch: $branch, commitSha: $sha, runId: $runId, errorMessage: $errorMessage, pusherName: $pusherName, githubPat: $githubPat}')
- 
-# POST to CodeGuardAI webhook endpoint
-CODEGUARD_URL=$(echo "${{ secrets.CODEGUARD_API_URL }}" | xargs)
-echo "Sending log payload to: $CODEGUARD_URL/api/github/action-failure"
-curl -v -X POST "${CODEGUARD_URL}/api/github/action-failure" \
--H "Content-Type: application/json" \
--d "$PAYLOAD"
+      # ==========================================
+      # 5. COREGUARD AI NOTIFICATION ON FAILURE
+      # ==========================================
+      - name: Notify CodeGuardAI on Failure
+        if: failure()
+        run: |
+          LOG_CONTENT=""
+          # Capture Frontend Build Failure logs
+          if [ -f "EarnEasyWorkmates.Client/EarnEasyWorkmates/build_log_frontend.txt" ]; then
+            LOG_CONTENT="--- FRONTEND BUILD LOGS ---\n$(tail -n 40 EarnEasyWorkmates.Client/EarnEasyWorkmates/build_log_frontend.txt)\n"
+          fi
+          # Capture Frontend Security Audit logs
+          if [ -f "EarnEasyWorkmates.Client/EarnEasyWorkmates/security_log_frontend.txt" ]; then
+            LOG_CONTENT="$LOG_CONTENT\n--- FRONTEND SECURITY VULNERABILITIES ---\n$(cat EarnEasyWorkmates.Client/EarnEasyWorkmates/security_log_frontend.txt | tail -n 40)\n"
+          fi
+          # Capture Backend Build Failure logs (Corrected Path!)
+          if [ -f "EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller/build_log_backend.txt" ]; then
+            LOG_CONTENT="$LOG_CONTENT\n--- BACKEND BUILD LOGS ---\n$(tail -n 40 EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller/build_log_backend.txt)\n"
+          fi
+          # Capture Backend Security Audit logs (Corrected Path!)
+          if [ -f "EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller/security_log_backend.txt" ]; then
+            LOG_CONTENT="$LOG_CONTENT\n--- BACKEND SECURITY VULNERABILITIES ---\n$(cat EarnEasyWorkmates.Api/EarnEasyWorkmates.Controller/security_log_backend.txt | tail -n 40)\n"
+          fi
+          if [ -z "$LOG_CONTENT" ]; then
+            LOG_CONTENT="No build or security logs captured."
+          fi
+          # Safely construct JSON payload using jq
+          PAYLOAD=$(jq -n \
+            --arg repo "${{ github.repository }}" \
+            --arg branch "${{ github.ref_name }}" \
+            --arg sha "${{ github.sha }}" \
+            --arg runId "${{ github.run_id }}" \
+            --arg errorMessage "$LOG_CONTENT" \
+            --arg pusherName "${{ github.actor }}" \
+            '{repo: $repo, branch: $branch, commitSha: $sha, runId: $runId, errorMessage: $errorMessage, pusherName: $pusherName}')
+          # POST to CodeGuardAI webhook endpoint
+          CODEGUARD_URL=$(echo "${{ secrets.CODEGUARD_API_URL }}" | xargs)
+          echo "Sending log payload to: $CODEGUARD_URL/api/github/action-failure"
+          curl -v -X POST "${CODEGUARD_URL}/api/github/action-failure" \
+            -H "Content-Type: application/json" \
+            -d "$PAYLOAD"
