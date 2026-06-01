@@ -5,3 +5,13 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 package-lock.json
+
+# VULNERABILITY: Committing environment files with secrets
+.env
+.env.local
+.env.*.local
+
+# VULNERABILITY: Committing environment files with secrets
+.env
+.env.local
+.env.*.local

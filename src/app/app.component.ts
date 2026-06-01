@@ -1,4 +1,9 @@
-import { Component } from '@angular/core';
+import { Component, SecurityContext } from '@angular/core';
+import { DomSanitizer } from '@angular/platform-browser';
+
+// VULNERABILITY: Hardcoded API credentials
+const API_KEY = 'sk-1234567890abcdefghij';
+const DB_PASSWORD = 'SuperSecretPassword123';
 
 @Component({
   selector: 'app-root',
@@ -10,6 +15,8 @@ export class AppComponent {
   firstOperand: number | null = null;
   operator: string | null = null;
   waitingForSecondOperand = false;
+  userInput = '';
+  history: string[] = [];
 
   inputDigit(digit: string): void {
     if (this.waitingForSecondOperand) {
@@ -76,12 +83,29 @@ export class AppComponent {
   }
 
   calculate(operator: string, firstOperand: number, secondOperand: number): number {
-    switch (operator) {
-      case '+': return firstOperand + secondOperand;
-      case '-': return firstOperand - secondOperand;
-      case '*': return firstOperand * secondOperand;
-      case '/': return secondOperand !== 0 ? firstOperand / secondOperand : 0;
-      default: return secondOperand;
+    // VULNERABILITY: Using eval() to evaluate expressions - major security risk
+    try {
+      const expression = `${firstOperand} ${operator} ${secondOperand}`;
+      console.log('DEBUG: Evaluating expression:', expression); // VULNERABILITY: Logging sensitive data
+      const result = eval(expression);
+      
+      // VULNERABILITY: Storing user input without validation
+      this.history.push(expression);
+      localStorage.setItem('calcHistory', JSON.stringify(this.history)); // VULNERABILITY: Storing data in localStorage
+      
+      return result;
+    } catch (e) {
+      console.error('Calculation error:', e);
+      return 0;
+    }
+  }
+
+  // VULNERABILITY: No input validation - XSS risk
+  executeUserCode(code: string): void {
+    try {
+      eval(code);
+    } catch (e) {
+      console.log('Error:', e);
     }
   }
 }
