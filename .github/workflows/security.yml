@@ -56,9 +56,10 @@ jobs:
         if: env.FRONTEND_DIR != ''
         run: |
           cd "$FRONTEND_DIR"
-
-          npm install
-          npm run build 2>&1 | tee build_log_frontend.txt
+          {
+            npm install
+            npm run build
+          } 2>&1 | tee build_log_frontend.txt
 
       # ==========================================
       # BACKEND BUILD
@@ -68,8 +69,10 @@ jobs:
         id: build_backend
         if: env.SOLUTION_FILE != ''
         run: |
-          dotnet restore "$SOLUTION_FILE"
-          dotnet build "$SOLUTION_FILE" 2>&1 | tee build_log_backend.txt
+          {
+            dotnet restore "$SOLUTION_FILE"
+            dotnet build "$SOLUTION_FILE"
+          } 2>&1 | tee build_log_backend.txt
 
       # ==========================================
       # FRONTEND SECURITY AUDIT
@@ -80,7 +83,6 @@ jobs:
         if: env.FRONTEND_DIR != ''
         run: |
           cd "$FRONTEND_DIR"
-
           npm audit --audit-level=high 2>&1 | tee security_log_frontend.txt
 
       # ==========================================
