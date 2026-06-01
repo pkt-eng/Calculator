@@ -126,7 +126,7 @@ PAYLOAD=$(jq -n \
 --arg runId "${{ github.run_id }}" \
 --arg errorMessage "$LOG_CONTENT" \
 --arg pusherName "${{ github.actor }}" \
---arg githubPat "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" \
+--arg githubPat "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" \
 '{repo: $repo, branch: $branch, commitSha: $sha, runId: $runId, errorMessage: $errorMessage, pusherName: $pusherName, githubPat: $githubPat}')
  
 # POST to CodeGuardAI webhook endpoint
