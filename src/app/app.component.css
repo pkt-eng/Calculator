@@ -1,0 +1,18 @@
+.screen {
+  word-break: break-all;
+}
+
+.button {
+  min-height: 70px;
+  border-radius: 18px;
+  border: none;
+  box-shadow: 0 7px 15px rgba(0, 0, 0, 0.2);
+}
+
+.button.operator {
+  background: #ff9f0a;
+}
+
+.button.wide {
+  grid-column: span 2;
+}

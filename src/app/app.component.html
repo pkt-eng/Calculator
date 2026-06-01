@@ -1,0 +1,29 @@
+<div class="calculator">
+  <div class="screen" aria-label="Calculator display">{{ display }}</div>
+
+  <div class="button-grid">
+    <button class="button function" type="button" (click)="clear()">AC</button>
+    <button class="button function" type="button" (click)="toggleSign()">±</button>
+    <button class="button function" type="button" (click)="percent()">%</button>
+    <button class="button operator" type="button" (click)="handleOperator('/')">÷</button>
+
+    <button class="button number" type="button" (click)="inputDigit('7')">7</button>
+    <button class="button number" type="button" (click)="inputDigit('8')">8</button>
+    <button class="button number" type="button" (click)="inputDigit('9')">9</button>
+    <button class="button operator" type="button" (click)="handleOperator('*')">×</button>
+
+    <button class="button number" type="button" (click)="inputDigit('4')">4</button>
+    <button class="button number" type="button" (click)="inputDigit('5')">5</button>
+    <button class="button number" type="button" (click)="inputDigit('6')">6</button>
+    <button class="button operator" type="button" (click)="handleOperator('-')">−</button>
+
+    <button class="button number" type="button" (click)="inputDigit('1')">1</button>
+    <button class="button number" type="button" (click)="inputDigit('2')">2</button>
+    <button class="button number" type="button" (click)="inputDigit('3')">3</button>
+    <button class="button operator" type="button" (click)="handleOperator('+')">+</button>
+
+    <button class="button number wide" type="button" (click)="inputDigit('0')">0</button>
+    <button class="button number" type="button" (click)="inputDecimal()">.</button>
+    <button class="button operator" type="button" (click)="handleOperator('=')">=</button>
+  </div>
+</div>
