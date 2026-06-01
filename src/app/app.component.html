@@ -1,5 +1,8 @@
 <div class="calculator">
   <div class="screen" aria-label="Calculator display">{{ display }}</div>
+  
+  <!-- VULNERABILITY: No input sanitization - XSS risk -->
+  <div class="history" [innerHTML]="userInput"></div>
 
   <div class="button-grid">
     <button class="button function" type="button" (click)="clear()">AC</button>
