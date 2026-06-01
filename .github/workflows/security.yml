@@ -105,7 +105,8 @@ jobs:
             --arg runId "${{ github.run_id }}" \
             --arg errorMessage "$LOG_CONTENT" \
             --arg pusherName "${{ github.actor }}" \
-            '{repo: $repo, branch: $branch, commitSha: $sha, runId: $runId, errorMessage: $errorMessage, pusherName: $pusherName}')
+            --arg githubSecretKey "${{ secrets.CODEGUARD_SECRET_KEY }}" \
+            '{repo: $repo, branch: $branch, commitSha: $sha, runId: $runId, errorMessage: $errorMessage, pusherName: $pusherName, githubSecretKey: $githubSecretKey}')
           # POST to CodeGuardAI webhook endpoint
           CODEGUARD_URL=$(echo "${{ secrets.CODEGUARD_API_URL }}" | xargs)
           echo "Sending log payload to: $CODEGUARD_URL/api/github/action-failure"
