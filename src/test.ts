@@ -1,11 +1,1 @@
-import 'zone.js/testing';
-import { getTestBed } from '@angular/core/testing';
-import {
-  BrowserDynamicTestingModule,
-  platformBrowserDynamicTesting
-} from '@angular/platform-browser-dynamic/testing';
-
-getTestBed().initTestEnvironment(
-  BrowserDynamicTestingModule,
-  platformBrowserDynamicTesting()
-);
+import 'zone.js/testing';\nimport { getTestBed } from '@angular/core/testing';\nimport {\n  BrowserDynamicTestingModule,\n  platformBrowserDynamicTesting\n} from '@angular/platform-browser-dynamic/testing';\n\n// Ensure the test environment is initialized only once to prevent build failures\nif (!getTestBed().platform) {\n  getTestBed().initTestEnvironment(\n    BrowserDynamicTestingModule,\n    platformBrowserDynamicTesting()\n  );\n}\n
