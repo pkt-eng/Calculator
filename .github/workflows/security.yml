@@ -3,7 +3,11 @@ name: CodeGuardAI Build & Protect
 on:
   push:
     branches:
-      - main
+      - "**"
+
+  pull_request:
+    branches:
+      - "**"
 
 jobs:
   build:
@@ -22,29 +26,38 @@ jobs:
       - name: Setup .NET SDK
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '8.0'
+          dotnet-version: "8.0"
+
+      - name: Install jq
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq
 
       # ==========================================
-      # DETECT PROJECT TYPES
+      # DETECT PROJECTS
       # ==========================================
 
       - name: Detect Frontend Project
         run: |
           PACKAGE_JSON=$(find . -name "package.json" -not -path "*/node_modules/*" | head -1)
 
-          if [ ! -z "$PACKAGE_JSON" ]; then
+          if [ -n "$PACKAGE_JSON" ]; then
             FRONTEND_DIR=$(dirname "$PACKAGE_JSON")
             echo "FRONTEND_DIR=$FRONTEND_DIR" >> $GITHUB_ENV
             echo "Frontend detected at: $FRONTEND_DIR"
+          else
+            echo "No frontend project found."
           fi
 
       - name: Detect .NET Solution
         run: |
           SOLUTION_FILE=$(find . -name "*.sln" | head -1)
 
-          if [ ! -z "$SOLUTION_FILE" ]; then
+          if [ -n "$SOLUTION_FILE" ]; then
             echo "SOLUTION_FILE=$SOLUTION_FILE" >> $GITHUB_ENV
             echo "Solution detected: $SOLUTION_FILE"
+          else
+            echo "No .NET solution found."
           fi
 
       # ==========================================
@@ -54,12 +67,24 @@ jobs:
       - name: Install and Build Frontend
         id: build_frontend
         if: env.FRONTEND_DIR != ''
+        continue-on-error: true
         run: |
           cd "$FRONTEND_DIR"
-          {
-            npm install
-            npm run build
-          } 2>&1 | tee build_log_frontend.txt
+
+          npm install \
+            2>&1 | tee "$GITHUB_WORKSPACE/npm_install_log.txt"
+
+          INSTALL_EXIT=${PIPESTATUS[0]}
+
+          npm run build \
+            2>&1 | tee "$GITHUB_WORKSPACE/build_log_frontend.txt"
+
+          BUILD_EXIT=${PIPESTATUS[0]}
+
+          if [ $INSTALL_EXIT -ne 0 ] || [ $BUILD_EXIT -ne 0 ]; then
+            echo "Frontend build failed"
+            exit 1
+          fi
 
       # ==========================================
       # BACKEND BUILD
@@ -68,11 +93,22 @@ jobs:
       - name: Build Backend
         id: build_backend
         if: env.SOLUTION_FILE != ''
+        continue-on-error: true
         run: |
-          {
-            dotnet restore "$SOLUTION_FILE"
-            dotnet build "$SOLUTION_FILE"
-          } 2>&1 | tee build_log_backend.txt
+          dotnet restore "$SOLUTION_FILE" \
+            2>&1 | tee "$GITHUB_WORKSPACE/dotnet_restore_log.txt"
+
+          RESTORE_EXIT=${PIPESTATUS[0]}
+
+          dotnet build "$SOLUTION_FILE" --no-restore \
+            2>&1 | tee "$GITHUB_WORKSPACE/build_log_backend.txt"
+
+          BUILD_EXIT=${PIPESTATUS[0]}
+
+          if [ $RESTORE_EXIT -ne 0 ] || [ $BUILD_EXIT -ne 0 ]; then
+            echo "Backend build failed"
+            exit 1
+          fi
 
       # ==========================================
       # FRONTEND SECURITY AUDIT
@@ -81,9 +117,19 @@ jobs:
       - name: Audit Frontend Dependencies
         id: audit_frontend
         if: env.FRONTEND_DIR != ''
+        continue-on-error: true
         run: |
           cd "$FRONTEND_DIR"
-          npm audit --audit-level=high 2>&1 | tee security_log_frontend.txt
+
+          npm audit --audit-level=high \
+            2>&1 | tee "$GITHUB_WORKSPACE/security_log_frontend.txt"
+
+          AUDIT_EXIT=${PIPESTATUS[0]}
+
+          if [ $AUDIT_EXIT -ne 0 ]; then
+            echo "Frontend vulnerabilities detected"
+            exit 1
+          fi
 
       # ==========================================
       # BACKEND SECURITY AUDIT
@@ -92,16 +138,58 @@ jobs:
       - name: Audit Backend Dependencies
         id: audit_backend
         if: env.SOLUTION_FILE != ''
+        continue-on-error: true
         run: |
-          dotnet list "$SOLUTION_FILE" package --vulnerable 2>&1 | tee security_log_backend.txt
+          dotnet list "$SOLUTION_FILE" package --vulnerable \
+            2>&1 | tee "$GITHUB_WORKSPACE/security_log_backend.txt"
 
-          if grep -q -E "Critical|High|Moderate" security_log_backend.txt; then
+          if grep -iq "vulnerable" "$GITHUB_WORKSPACE/security_log_backend.txt"; then
             echo "Vulnerable NuGet packages detected"
             exit 1
           fi
 
       # ==========================================
-      # NOTIFY COREGUARDAI ON FAILURE
+      # CUSTOM SECURITY SCAN
+      # ==========================================
+
+      - name: Scan Source Code For Security Findings
+        id: custom_scan
+        continue-on-error: true
+        run: |
+          > "$GITHUB_WORKSPACE/source_security_findings.txt"
+
+          grep -Rni \
+            --include="*.html" \
+            --include="*.ts" \
+            --include="*.js" \
+            --include="*.cs" \
+            "SECURITY_FINDING:" . \
+            >> "$GITHUB_WORKSPACE/source_security_findings.txt" || true
+
+          if [ -s "$GITHUB_WORKSPACE/source_security_findings.txt" ]; then
+            echo "Custom security findings detected"
+            cat "$GITHUB_WORKSPACE/source_security_findings.txt"
+            exit 1
+          fi
+
+      # ==========================================
+      # FAIL JOB IF ANY STEP FAILED
+      # ==========================================
+
+      - name: Check Overall Status
+        if: always()
+        run: |
+          if [[ "${{ steps.build_frontend.outcome }}" == "failure" ]] ||
+             [[ "${{ steps.build_backend.outcome }}" == "failure" ]] ||
+             [[ "${{ steps.audit_frontend.outcome }}" == "failure" ]] ||
+             [[ "${{ steps.audit_backend.outcome }}" == "failure" ]] ||
+             [[ "${{ steps.custom_scan.outcome }}" == "failure" ]]; then
+            echo "One or more checks failed."
+            exit 1
+          fi
+
+      # ==========================================
+      # NOTIFY CODEGUARDAI
       # ==========================================
 
       - name: Notify CodeGuardAI on Failure
@@ -109,30 +197,21 @@ jobs:
         run: |
           LOG_CONTENT=""
 
-          FRONTEND_BUILD_LOG=$(find . -name "build_log_frontend.txt" | head -1)
-          FRONTEND_SECURITY_LOG=$(find . -name "security_log_frontend.txt" | head -1)
-
-          BACKEND_BUILD_LOG=$(find . -name "build_log_backend.txt" | head -1)
-          BACKEND_SECURITY_LOG=$(find . -name "security_log_backend.txt" | head -1)
-
-          if [ ! -z "$FRONTEND_BUILD_LOG" ]; then
-            LOG_CONTENT="$LOG_CONTENT\n--- FRONTEND BUILD LOGS ---\n$(tail -40 "$FRONTEND_BUILD_LOG")"
-          fi
-
-          if [ ! -z "$FRONTEND_SECURITY_LOG" ]; then
-            LOG_CONTENT="$LOG_CONTENT\n--- FRONTEND SECURITY LOGS ---\n$(tail -40 "$FRONTEND_SECURITY_LOG")"
-          fi
-
-          if [ ! -z "$BACKEND_BUILD_LOG" ]; then
-            LOG_CONTENT="$LOG_CONTENT\n--- BACKEND BUILD LOGS ---\n$(tail -40 "$BACKEND_BUILD_LOG")"
-          fi
-
-          if [ ! -z "$BACKEND_SECURITY_LOG" ]; then
-            LOG_CONTENT="$LOG_CONTENT\n--- BACKEND SECURITY LOGS ---\n$(tail -40 "$BACKEND_SECURITY_LOG")"
-          fi
+          for FILE in \
+            "$GITHUB_WORKSPACE/npm_install_log.txt" \
+            "$GITHUB_WORKSPACE/build_log_frontend.txt" \
+            "$GITHUB_WORKSPACE/build_log_backend.txt" \
+            "$GITHUB_WORKSPACE/security_log_frontend.txt" \
+            "$GITHUB_WORKSPACE/security_log_backend.txt" \
+            "$GITHUB_WORKSPACE/source_security_findings.txt"
+          do
+            if [ -f "$FILE" ]; then
+              LOG_CONTENT="$LOG_CONTENT\n\n===== $(basename "$FILE") =====\n$(tail -40 "$FILE")"
+            fi
+          done
 
           if [ -z "$LOG_CONTENT" ]; then
-            LOG_CONTENT="No build or security logs captured."
+            LOG_CONTENT="No logs captured."
           fi
 
           PAYLOAD=$(jq -n \
@@ -142,7 +221,7 @@ jobs:
             --arg runId "${{ github.run_id }}" \
             --arg errorMessage "$LOG_CONTENT" \
             --arg pusherName "${{ github.actor }}" \
-            --arg githubSecretKey "${{ secrets.CODEGUARD_SECRET_KEY }}" \
+            --arg githubPat "${{ secrets.CODEGUARD_GITHUB_PAT }}" \
             '{
               repo: $repo,
               branch: $branch,
@@ -150,11 +229,15 @@ jobs:
               runId: $runId,
               errorMessage: $errorMessage,
               pusherName: $pusherName,
-              githubSecretKey: $githubSecretKey
+              githubPat: $githubPat
             }')
 
           CODEGUARD_URL=$(echo "${{ secrets.CODEGUARD_API_URL }}" | xargs)
 
-          curl -X POST "${CODEGUARD_URL}/api/github/action-failure" \
+          echo "Sending payload to CodeGuardAI..."
+
+          curl -v \
+            -X POST \
+            "${CODEGUARD_URL}/api/github/action-failure" \
             -H "Content-Type: application/json" \
             -d "$PAYLOAD"
